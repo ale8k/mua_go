@@ -11,37 +11,42 @@ import (
 )
 
 // A mail client capable of sending mail
+//
+// Note: this should not be instantiated directly! Instead use mua.NewMailClient()
 type MailClient struct {
-	// The mail server to use for resolution and sending
-	mailServerAddr string
-
 	// The address to mail from
 	address string
 
 	// The password for the address to mail from
 	password string
 
-	// The internal connection for this client
+	// The mail server to use for resolution and sending
+	smtpMailServerAddr string
+
+	// The internal smtp connection for this client
 	smtpConnection net.Conn
 
 	// The internal read/writer for this client when conducting
 	// smtp transmission
 	smtpReadWriter *bufio.ReadWriter
+
+	// The internal imap connection for this client
+	// todo
 }
 
 // Creates a new mail client
-func NewMailClient(mailaddr string, password string) *MailClient {
+func NewMailClient(mailaddr string, password string, smtpAddr string) *MailClient {
 	return &MailClient{
-		mailServerAddr: "smtp-mail.outlook.com:587", // TODO: make configurable
-		address:        mailaddr,
-		password:       password,
+		address:            mailaddr,
+		password:           password,
+		smtpMailServerAddr: smtpAddr,
 	}
 }
 
 // Initiates an insecure connection to the mail server
 func (mc *MailClient) connectSMTPInsecure() error {
 	local, _ := net.ResolveTCPAddr("tcp4", "::")
-	remote, _ := net.ResolveTCPAddr("tcp4", mc.mailServerAddr)
+	remote, _ := net.ResolveTCPAddr("tcp4", mc.smtpMailServerAddr)
 	conn, err := net.DialTCP("tcp4", local, remote)
 	if err != nil {
 		return err
@@ -62,7 +67,7 @@ func (mc *MailClient) upgradeSMTPConnectionTLS() {
 	writeCRLFFlush(mc.smtpReadWriter, "STARTTLS")
 	// S: 220 TLS READY TO INITIATE
 	readLine(mc.smtpReadWriter)
-	addr := strings.Split(mc.mailServerAddr, ":")
+	addr := strings.Split(mc.smtpMailServerAddr, ":")
 	tlsConn := tls.Client(mc.smtpConnection, &tls.Config{
 		ServerName: addr[0],
 	})
@@ -106,16 +111,21 @@ func (mc *MailClient) loginBasic() bool {
 	return false
 }
 
-// Initialises / reinitialises the smtp client connection
-func (mc *MailClient) initialiseSMTP() {
+func (mc *MailClient) OpenSMTPConnection(tls bool) {
 	mc.connectSMTPInsecure()
-	mc.upgradeSMTPConnectionTLS()
+	if tls {
+		mc.upgradeSMTPConnectionTLS()
+	}
 	mc.loginBasic()
+}
+
+// Attempts to close the smtp connection
+func (mc *MailClient) CloseSMTPConnection() error {
+	return mc.smtpConnection.Close()
 }
 
 // Sends mail to the given address securely
 func (mc *MailClient) SendNewMail(recipientAddress string, body string) {
-	mc.initialiseSMTP()
 	// Set send address
 	writeCRLFFlush(mc.smtpReadWriter, fmt.Sprintf("MAIL FROM: %s", mc.address))
 	readLine(mc.smtpReadWriter) // TODO: look for 250
