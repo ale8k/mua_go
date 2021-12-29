@@ -6,8 +6,11 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net"
+	"os"
 	"strconv"
 	"strings"
+
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 // SMTP Server	smtp-mail.outlook.com
@@ -23,6 +26,7 @@ func main() {
 	conn, err := net.DialTCP("tcp4", local, remote)
 	handleErr(err)
 	reader := bufio.NewReader(conn)
+	inputReader := bufio.NewReader(os.Stdin)
 
 	// S: WELCOME
 	readLine(reader)
@@ -51,14 +55,32 @@ func main() {
 	// C: OAUTH Authenticate
 	writeLineTLS(tlsConn, "AUTH LOGIN\r\n")
 	// S: Read oauth resp
-	resp := strings.Split(readLine(reader), " ")
+	usernameResp := strings.Split(readLine(reader), " ")
 
-	if r, err := strconv.Atoi(resp[0]); r == 334 {
+	if r, err := strconv.Atoi(usernameResp[0]); r == 334 {
+		decode64 := base64.StdEncoding.DecodeString
+
+		// Username
 		handleErr(err)
-		usernameReq, err := base64.StdEncoding.DecodeString(resp[1])
+		usernameReq, err := decode64(usernameResp[1])
 		handleErr(err)
+		// TODO: run email regex
 		fmt.Println(string(usernameReq))
+		username, _, _ := inputReader.ReadLine()
+		b64Username := base64.StdEncoding.EncodeToString(username)
+		writeLineTLS(tlsConn, b64Username+"\r\n")
 
+		// Password
+		passResp := strings.Split(readLine(reader), " ")
+		if r2, err := strconv.Atoi(passResp[0]); r2 == 334 {
+			handleErr(err)
+			passReq, err := decode64(passResp[1])
+			handleErr(err)
+			fmt.Println(string(passReq))
+			password, _ := terminal.ReadPassword(0)
+			b64Password := base64.StdEncoding.EncodeToString(password)
+
+		}
 	}
 
 }
