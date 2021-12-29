@@ -88,8 +88,6 @@ func (mc *MailClient) LoginBasicSecure() bool {
 	usernameResp := strings.Split(readLine(mc.reader), " ")
 
 	if r, err := strconv.Atoi(usernameResp[0]); r == 334 {
-		decode64 := base64.StdEncoding.DecodeString
-
 		// Username
 		handleErr(err)
 		b64Username := base64.StdEncoding.EncodeToString([]byte(mc.address))
@@ -99,10 +97,6 @@ func (mc *MailClient) LoginBasicSecure() bool {
 		passResp := strings.Split(readLine(mc.reader), " ")
 		if r2, err := strconv.Atoi(passResp[0]); r2 == 334 {
 			handleErr(err)
-			passReq, err := decode64(passResp[1])
-			handleErr(err)
-			fmt.Println(string(passReq))
-
 			b64Password := base64.StdEncoding.EncodeToString([]byte(mc.password))
 			writeLineTLS(tlsConn, b64Password+"\r\n")
 
