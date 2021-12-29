@@ -3,8 +3,11 @@ package main
 import (
 	"bufio"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
 	"net"
+	"strconv"
+	"strings"
 )
 
 // SMTP Server	smtp-mail.outlook.com
@@ -44,6 +47,19 @@ func main() {
 
 	// S: EHLO RESP
 	readEhloResponse(reader)
+
+	// C: OAUTH Authenticate
+	writeLineTLS(tlsConn, "AUTH LOGIN\r\n")
+	// S: Read oauth resp
+	resp := strings.Split(readLine(reader), " ")
+
+	if r, err := strconv.Atoi(resp[0]); r == 334 {
+		handleErr(err)
+		usernameReq, err := base64.StdEncoding.DecodeString(resp[1])
+		handleErr(err)
+		fmt.Println(string(usernameReq))
+
+	}
 
 }
 
@@ -92,10 +108,11 @@ func readEhloResponse(reader *bufio.Reader) []string {
 }
 
 // reads single line safely from bufio.Reader
-func readLine(reader *bufio.Reader) {
+func readLine(reader *bufio.Reader) string {
 	line, err := reader.ReadBytes('\n') // look for 220
 	handleErr(err)
 	fmt.Printf("S: %v", string(line))
+	return string(line)
 }
 
 // Handles error generic, panics if error found
