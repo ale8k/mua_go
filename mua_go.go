@@ -14,59 +14,91 @@ import (
 // SMTP TLS/SSL Encryption Required	Yes
 
 func main() {
-	fmt.Println("yolo!")
-
 	local, _ := net.ResolveTCPAddr("tcp4", "::")
 	remote, _ := net.ResolveTCPAddr("tcp4", "smtp-mail.outlook.com:587")
-
+	fmt.Println("---STARTING SMTP CONNECTION---")
 	conn, err := net.DialTCP("tcp4", local, remote)
 	handleErr(err)
-
 	reader := bufio.NewReader(conn)
 
-	line, err := reader.ReadBytes('\n') // look for 220
+	// S: WELCOME
+	readLine(reader)
+
+	// C: EHLO
+	writeLine(conn, "EHLO\r\n")
+
+	// S: EHLO RESP
+	readEhloResponse(reader)
+
+	// C: STARTTLS
+	writeLine(conn, "STARTTLS\r\n")
+
+	// S: 220 TLS READY TO INITIATE
+	readLine(reader)
+
+	// Client upgrade connection
+	tlsConn, reader := upgradeConnectionTLS(conn, "smtp-mail.outlook.com")
+
+	// C: EHLO (TLS)
+	writeLineTLS(tlsConn, "EHLO\r\n")
+
+	// S: EHLO RESP
+	readEhloResponse(reader)
+
+}
+
+// upgrades connection to tls using host ca's
+// additionally returns a buffered reader for convenience
+func upgradeConnectionTLS(conn *net.TCPConn, serverName string) (*tls.Conn, *bufio.Reader) {
+	tlsConn := tls.Client(conn, &tls.Config{
+		ServerName: serverName,
+	})
+	return tlsConn, bufio.NewReader(tlsConn)
+}
+
+// Writes a none tls line error handled to server
+// panics if write fails
+// prints the line
+func writeLine(conn *net.TCPConn, msg string) {
+	_, err := conn.Write([]byte(msg))
 	handleErr(err)
-	fmt.Println(string(line))
+	fmt.Printf("C: %q\n", msg)
+}
 
-	// Now we say HELO
-	written, err := conn.Write([]byte("EHLO\r\n")) // resolve to host IP
-	fmt.Printf("written %d, err: %v\n", written, err)
+// Writes a tls line error handled to server
+// panics if write fails
+// prints the line
+func writeLineTLS(conn *tls.Conn, msg string) {
+	_, err := conn.Write([]byte(msg))
+	handleErr(err)
+	fmt.Printf("C: %q\n", msg)
+}
 
-	// Normally, the response to EHLO will be a multiline reply.  Each line
-	// of the response contains a keyword and, optionally, one or more
-	// parameters.  Following the normal syntax for multiline replies, these
-	// keyworks follow the code (250) and a hyphen for all but the last
-	// line, and the code and a space for the last line.  The syntax for a
-	// positive response, using the ABNF notation and terminal symbols of
-	// [8]
-	// Read until a none STATUS- line
+// reads a none-tls ehlo response
+func readEhloResponse(reader *bufio.Reader) []string {
 	welcomeResp := make([]string, 0)
 	for {
-		line, err = reader.ReadBytes('\n')
+		line, err := reader.ReadBytes('\n')
 		handleErr(err)
 		welcomeResp = append(welcomeResp, string(line))
 		if line[3] != '-' {
 			break
 		}
 	}
-	fmt.Println(welcomeResp)
-
-	conn.Write([]byte("STARTTLS\r\n"))
-
-	line, err = reader.ReadBytes('\n') // look for 220
-	fmt.Println(string(line))
-	handleErr(err)
-
-	// Say hello again as per spec with upgraded conn
-	// if rootca's null, uses host os's rootca's
-	tlsConn := tls.Client(conn, &tls.Config{
-		ServerName: "smtp-mail.outlook.com",
-	})
-	written, err = tlsConn.Write([]byte("EHLO\r\n")) // resolve to host IP
-	fmt.Printf("written tls %d, err: %v\n", written, err)
-
+	for _, v := range welcomeResp {
+		fmt.Printf("S: %v", v)
+	}
+	return welcomeResp
 }
 
+// reads single line safely from bufio.Reader
+func readLine(reader *bufio.Reader) {
+	line, err := reader.ReadBytes('\n') // look for 220
+	handleErr(err)
+	fmt.Printf("S: %v", string(line))
+}
+
+// Handles error generic, panics if error found
 func handleErr(err error) {
 	if err != nil {
 		panic(err)
