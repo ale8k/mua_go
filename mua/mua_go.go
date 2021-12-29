@@ -137,4 +137,8 @@ func (mc *MailClient) SendNewMail(recipientAddress string, body string) {
 	readLine(mc.smtpReadWriter) // TODO: look for 354 (S: 354 Start mail input; end with <CRLF>.<CRLF>)
 	writeCRLFFlush(mc.smtpReadWriter, body)
 	readLine(mc.smtpReadWriter)
+
+	// Reset mail
+	writeCRLFFlush(mc.smtpReadWriter, "RSET")
+	readLine(mc.smtpReadWriter)
 }

@@ -16,12 +16,12 @@ func main() {
 	mailBuilder := mua.MailBuilder{}
 	mailBuilder.SetTo(mailAddress)
 	mailBuilder.SetFrom("digletti", mailAddress)
-	mailBuilder.SetSubject("test 1")
+	mailBuilder.SetSubject("test 3")
 	mailBuilder.UpdateMailBodyString("sending mail")
 
 	client.SendNewMail(mailAddress, string(mailBuilder.Build()))
 
-	mailBuilder.SetSubject("test 2")
+	mailBuilder.SetSubject("test 4")
 	client.SendNewMail(mailAddress, string(mailBuilder.Build())) // isnt sending, huh ?
 	err := client.CloseSMTPConnection()
 	fmt.Println(err)
