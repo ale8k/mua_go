@@ -1,4 +1,4 @@
-package main
+package mua
 
 import (
 	"testing"

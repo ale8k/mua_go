@@ -1,4 +1,4 @@
-package main
+package mua
 
 import (
 	"bufio"
@@ -136,23 +136,4 @@ func (mc *MailClient) SendNewMail(recipientAddress string, body string) {
 
 	writeLineTLS(tlsConn, body)
 	readLine(mc.reader)
-}
-
-func main() {
-	mailAddress := "bob@bob.com"
-	mailPwd := ""
-	client := NewMailClient(mailAddress, mailPwd)
-	client.UpgradeConnectionTLS()
-
-	if succesfulLogin := client.LoginBasicSecure(); succesfulLogin {
-		fmt.Println("login?: ", succesfulLogin)
-	}
-
-	mailBuilder := MailBuilder{}
-	mailBuilder.SetTo(mailAddress)
-	mailBuilder.SetFrom("digletti", mailAddress)
-	mailBuilder.SetSubject("testing this thing out")
-	mailBuilder.UpdateMailBodyString("sending mail")
-
-	client.SendNewMail(mailAddress, string(mailBuilder.Build()))
 }
