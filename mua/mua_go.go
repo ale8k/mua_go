@@ -10,6 +10,7 @@ import (
 	"strings"
 )
 
+// A mail client capable of sending mail
 type MailClient struct {
 	// The mail server to use for resolution and sending
 	mailServerAddr string
@@ -21,24 +22,24 @@ type MailClient struct {
 	password string
 
 	// The internal connection for this client
-	connection net.Conn
+	smtpConnection net.Conn
 
-	// The internal reader for this client
-	reader *bufio.Reader
+	// The internal read/writer for this client when conducting
+	// smtp transmission
+	smtpReadWriter *bufio.ReadWriter
 }
 
+// Creates a new mail client
 func NewMailClient(mailaddr string, password string) *MailClient {
-	client := &MailClient{
-		mailServerAddr: "smtp-mail.outlook.com:587",
+	return &MailClient{
+		mailServerAddr: "smtp-mail.outlook.com:587", // TODO: make configurable
 		address:        mailaddr,
 		password:       password,
 	}
-	client.connectInsecure()
-	return client
 }
 
 // Initiates an insecure connection to the mail server
-func (mc *MailClient) connectInsecure() error {
+func (mc *MailClient) connectSMTPInsecure() error {
 	local, _ := net.ResolveTCPAddr("tcp4", "::")
 	remote, _ := net.ResolveTCPAddr("tcp4", mc.mailServerAddr)
 	conn, err := net.DialTCP("tcp4", local, remote)
@@ -46,61 +47,56 @@ func (mc *MailClient) connectInsecure() error {
 		return err
 	}
 	handleErr(err)
-	mc.reader = bufio.NewReader(conn)
-	readLine(mc.reader)         // S: Welcome
-	writeLine(conn, "EHLO\r\n") // C: EHLO
-	readEhloResponse(mc.reader) // S: EHLO RESP
-	mc.connection = conn
+	mc.smtpReadWriter = bufio.NewReadWriter(bufio.NewReader(conn), bufio.NewWriter(conn))
+	readLine(mc.smtpReadWriter)               // S: Welcome
+	writeCRLFFlush(mc.smtpReadWriter, "EHLO") // C: EHLO
+	readEhloResponse(mc.smtpReadWriter)       // S: EHLO RESP
+	mc.smtpConnection = conn
 	return nil
 }
 
 // Performs a TLS negotiation using the host os's CAroot
 // upgrading the internal connection to a TLS one, additionally
 // updates the reader to look at the new TLS conn
-func (mc *MailClient) UpgradeConnectionTLS() {
-	conn, _ := mc.connection.(*net.TCPConn)
-	writeLine(conn, "STARTTLS\r\n")
+func (mc *MailClient) upgradeSMTPConnectionTLS() {
+	writeCRLFFlush(mc.smtpReadWriter, "STARTTLS")
 	// S: 220 TLS READY TO INITIATE
-	readLine(mc.reader)
+	readLine(mc.smtpReadWriter)
 	addr := strings.Split(mc.mailServerAddr, ":")
-	tlsConn := tls.Client(mc.connection, &tls.Config{
+	tlsConn := tls.Client(mc.smtpConnection, &tls.Config{
 		ServerName: addr[0],
 	})
-	mc.connection = tlsConn
-	mc.reader = bufio.NewReader(tlsConn)
+	mc.smtpConnection = tlsConn
+	mc.smtpReadWriter = bufio.NewReadWriter(bufio.NewReader(tlsConn), bufio.NewWriter(tlsConn))
 	fmt.Println("---TLS CONNECTION ESTABLISHED---")
 	// C: EHLO (TLS)
-	writeLineTLS(tlsConn, "EHLO\r\n")
+	writeCRLFFlush(mc.smtpReadWriter, "EHLO")
 	// S: EHLO RESP
-	readEhloResponse(mc.reader)
+	readEhloResponse(mc.smtpReadWriter)
 }
 
 // Performs a basic auth login against the client
 // returns whether or not the login was succesful,
 // false denotes either the user or password were incorrect
-func (mc *MailClient) LoginBasicSecure() bool {
-	tlsConn, ok := mc.connection.(*tls.Conn)
-	if !ok {
-		panic("connection is not secure! upgrade connection first via UpgradeConnecTLS()")
-	}
+func (mc *MailClient) loginBasic() bool {
 	// C: OAUTH Authenticate
-	writeLineTLS(tlsConn, "AUTH LOGIN\r\n")
-	usernameResp := strings.Split(readLine(mc.reader), " ")
+	writeCRLFFlush(mc.smtpReadWriter, "AUTH LOGIN")
+	usernameResp := strings.Split(readLine(mc.smtpReadWriter), " ")
 
 	if r, err := strconv.Atoi(usernameResp[0]); r == 334 {
 		// Username
 		handleErr(err)
 		b64Username := base64.StdEncoding.EncodeToString([]byte(mc.address))
-		writeLineTLS(tlsConn, b64Username+"\r\n")
+		writeCRLFFlush(mc.smtpReadWriter, b64Username)
 
 		// Password
-		passResp := strings.Split(readLine(mc.reader), " ")
+		passResp := strings.Split(readLine(mc.smtpReadWriter), " ")
 		if r2, err := strconv.Atoi(passResp[0]); r2 == 334 {
 			handleErr(err)
 			b64Password := base64.StdEncoding.EncodeToString([]byte(mc.password))
-			writeLineTLS(tlsConn, b64Password+"\r\n")
+			writeCRLFFlush(mc.smtpReadWriter, b64Password)
 
-			resLine := strings.Split(readLine(mc.reader), " ")
+			resLine := strings.Split(readLine(mc.smtpReadWriter), " ")
 			code := resLine[0]
 			if c, _ := strconv.Atoi(code); c == 235 {
 				return true
@@ -110,24 +106,25 @@ func (mc *MailClient) LoginBasicSecure() bool {
 	return false
 }
 
-// Sends mail to the given address
+// Initialises / reinitialises the smtp client connection
+func (mc *MailClient) initialiseSMTP() {
+	mc.connectSMTPInsecure()
+	mc.upgradeSMTPConnectionTLS()
+	mc.loginBasic()
+}
+
+// Sends mail to the given address securely
 func (mc *MailClient) SendNewMail(recipientAddress string, body string) {
-	tlsConn, ok := mc.connection.(*tls.Conn)
-	if !ok {
-		panic("connection is unsecure! upgrade connection!")
-	}
+	mc.initialiseSMTP()
 	// Set send address
-	writeLineTLS(tlsConn, fmt.Sprintf("MAIL FROM: %s\r\n", mc.address))
-	readLine(mc.reader) // TODO: look for 250
-
+	writeCRLFFlush(mc.smtpReadWriter, fmt.Sprintf("MAIL FROM: %s", mc.address))
+	readLine(mc.smtpReadWriter) // TODO: look for 250
 	// Set receive address
-	writeLineTLS(tlsConn, fmt.Sprintf("RCPT TO: %s\r\n", recipientAddress))
-	readLine(mc.reader) // TODO: look for 250
-
+	writeCRLFFlush(mc.smtpReadWriter, fmt.Sprintf("RCPT TO: %s", recipientAddress))
+	readLine(mc.smtpReadWriter) // TODO: look for 250
 	// Prep data for tranmission
-	writeLineTLS(tlsConn, "DATA\r\n")
-	readLine(mc.reader) // TODO: look for 354 (S: 354 Start mail input; end with <CRLF>.<CRLF>)
-
-	writeLineTLS(tlsConn, body)
-	readLine(mc.reader)
+	writeCRLFFlush(mc.smtpReadWriter, "DATA")
+	readLine(mc.smtpReadWriter) // TODO: look for 354 (S: 354 Start mail input; end with <CRLF>.<CRLF>)
+	writeCRLFFlush(mc.smtpReadWriter, body)
+	readLine(mc.smtpReadWriter)
 }
