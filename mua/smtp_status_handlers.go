@@ -23,8 +23,10 @@ func handleSmtpResponse(line string, expectedCode int) (bool, int, string) {
 	case 220: // Service ready
 		fmt.Println("all ok")
 	case 221: // Service closing
+	case 235: // Auth passed
 	case 250: // Action successful
 	case 334: // User/pass auth requested
+		return true, 10, ""
 	case 354: // Begin message
 	case 421: // Service unvailable and connection closing
 	case 450: // Users mailbox unavailable

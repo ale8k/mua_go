@@ -40,11 +40,13 @@ func readEhloResponse(reader *bufio.ReadWriter) ([]string, error) {
 }
 
 // Reads single line and panics on failure
-func readLine(reader *bufio.ReadWriter) string {
+func readLine(reader *bufio.ReadWriter) (string, error) {
 	line, err := reader.ReadBytes('\n') // look for 220
-	handleErr(err)
+	if err != nil {
+		return "", err
+	}
 	fmt.Printf("S: %v", string(line))
-	return string(line)
+	return string(line), nil
 }
 
 // Handles error generic, panics if error found
