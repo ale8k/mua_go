@@ -1,5 +1,16 @@
 package mua
 
+/*
+A mail client implemented in Go, see examples for usage
+
+This package reports SMTP server specific errors directly back to user
+when encountered, as such expect all errors to either a) be SMTP specific
+or b) bespoke, such as a generic connection failure, regex failure etc.
+
+Currently supports the following SMTP extensions:
+	- STARTTLS
+	- AUTH (LOGIN)
+*/
 import (
 	"bufio"
 	"crypto/tls"
@@ -9,16 +20,6 @@ import (
 	"net"
 	"strings"
 )
-
-// A mail client implemented in Go, see examples for usage
-//
-// This package reports SMTP server specific errors directly back to user
-// when encountered, as such expect all errors to either a) be SMTP specific
-// or b) bespoke, such as a generic connection failure, regex failure etc.
-//
-// Currently supports the following SMTP extensions:
-//	- STARTTLS
-//	- AUTH (LOGIN)
 
 const (
 	INITIAL_CONNECTION_FAILURE = "initial connection failed, response code: %d, response message: %s"
@@ -216,18 +217,18 @@ func (mc *MailClient) loginBasic() (bool, error) {
 // Opens a new smtp connection, if tls is wanted, optionally turn tls on
 // attempts to login with basic auth from the initial credential provided
 // when creating the client
-func (mc *MailClient) OpenSMTPConnection(tls bool) error {
+func (mc *MailClient) OpenSMTPConnection(tls bool) (bool, error) {
 	var err error
 	if err = mc.connectSMTPInsecure(); err != nil {
-		return err
+		return false, err
 	}
 	if tls {
 		if err = mc.upgradeSMTPConnectionTLS(); err != nil {
-			return err
+			return false, err
 		}
 	}
-	mc.loginBasic()
-	return err
+	ok, err := mc.loginBasic()
+	return ok, err
 }
 
 // Attempts to close the smtp connection, if it isn't able,
@@ -237,9 +238,13 @@ func (mc *MailClient) CloseSMTPConnection() error {
 }
 
 // Sends mail to the given address securely
-func (mc *MailClient) SendNewMail(recipientAddress string, body string) {
+func (mc *MailClient) SendNewMail(recipientAddress string, body string) error {
+	var err error
 	// Set send address
-	writeCRLFFlush(mc.smtpReadWriter, fmt.Sprintf("MAIL FROM: %s", mc.address))
+	if err = writeCRLFFlush(mc.smtpReadWriter, fmt.Sprintf("MAIL FROM: %s", mc.address)); err != nil {
+		return fmt.Errorf(WRITE_FAILURE, err)
+	}
+
 	readLine(mc.smtpReadWriter) // TODO: look for 250
 	// Set receive address
 	writeCRLFFlush(mc.smtpReadWriter, fmt.Sprintf("RCPT TO: %s", recipientAddress))
@@ -253,4 +258,5 @@ func (mc *MailClient) SendNewMail(recipientAddress string, body string) {
 	// Reset mail
 	writeCRLFFlush(mc.smtpReadWriter, "RSET")
 	readLine(mc.smtpReadWriter)
+	return err
 }
