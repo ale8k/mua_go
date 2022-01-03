@@ -238,14 +238,19 @@ func (mc *MailClient) CloseSMTPConnection() error {
 }
 
 // Sends mail to the given address securely
-func (mc *MailClient) SendNewMail(recipientAddress string, body string) error {
+func (mc *MailClient) SendNewMail(recipientAddress string, body string) (bool, error) {
 	var err error
 	// Set send address
 	if err = writeCRLFFlush(mc.smtpReadWriter, fmt.Sprintf("MAIL FROM: %s", mc.address)); err != nil {
-		return fmt.Errorf(WRITE_FAILURE, err)
+		return false, fmt.Errorf(WRITE_FAILURE, err)
 	}
-
-	readLine(mc.smtpReadWriter) // TODO: look for 250
+	line, err := readLine(mc.smtpReadWriter)
+	if err != nil {
+		return false, fmt.Errorf(READ_FAILURE, err)
+	}
+	// Need to send meta data to handler to explain what kind of '250' we expect, same for
+	// other errors too.
+	ok, code, statusLine = handleSmtpResponse(line, 250)
 	// Set receive address
 	writeCRLFFlush(mc.smtpReadWriter, fmt.Sprintf("RCPT TO: %s", recipientAddress))
 	readLine(mc.smtpReadWriter) // TODO: look for 250
