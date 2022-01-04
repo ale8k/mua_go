@@ -27,6 +27,7 @@ const (
 	READ_FAILURE               = "could not read from server, exiting... see: %w"
 	EHLO_ERROR                 = "client received invalid/erroneous/unexpected EHLO response with code %d, see: %s"
 	AUTH_LOGIN_ERROR           = "could not login, response code: %d, response message: %s"
+	MAIL_FROM_ERROR            = "MAIL FROM command rejected, see code: %d, response message: %s"
 )
 
 // A mail client capable of sending mail
@@ -238,6 +239,7 @@ func (mc *MailClient) CloseSMTPConnection() error {
 }
 
 // Sends mail to the given address securely
+// returns whether or not the mail sent successfully and any errors that occured
 func (mc *MailClient) SendNewMail(recipientAddress string, body string) (bool, error) {
 	var err error
 	// Set send address
@@ -250,7 +252,11 @@ func (mc *MailClient) SendNewMail(recipientAddress string, body string) (bool, e
 	}
 	// Need to send meta data to handler to explain what kind of '250' we expect, same for
 	// other errors too.
-	ok, code, statusLine = handleSmtpResponse(line, 250)
+	ok, code, statusLine := handleSmtpResponse(line, 250)
+	if !ok {
+		return false, errors.New(fmt.Sprintf(MAIL_FROM_ERROR, code, statusLine))
+	}
+
 	// Set receive address
 	writeCRLFFlush(mc.smtpReadWriter, fmt.Sprintf("RCPT TO: %s", recipientAddress))
 	readLine(mc.smtpReadWriter) // TODO: look for 250
@@ -263,5 +269,5 @@ func (mc *MailClient) SendNewMail(recipientAddress string, body string) (bool, e
 	// Reset mail
 	writeCRLFFlush(mc.smtpReadWriter, "RSET")
 	readLine(mc.smtpReadWriter)
-	return err
+	return true, err
 }
