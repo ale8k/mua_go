@@ -10,21 +10,23 @@ A basic SMTP client to send and receive emails for a given address(s).
 Sending an email example:
 ```go
 func main() {
-	mailAddress := "<your email>@<your domain>"
-	mailPwd := "<yourpassword>"
-	client := mua.NewMailClient(mailAddress, mailPwd)
-	client.UpgradeConnectionTLS()
+	mailAddress := ""
+	mailPwd := ""
 
-	if succesfulLogin := client.LoginBasicSecure(); succesfulLogin {
-		fmt.Println("login?: ", succesfulLogin)
-	}
+	client := mua.NewMailClient(mailAddress, mailPwd, "smtp-mail.outlook.com:587")
+	client.OpenSMTPConnection(true)
 
 	mailBuilder := mua.MailBuilder{}
 	mailBuilder.SetTo(mailAddress)
 	mailBuilder.SetFrom("digletti", mailAddress)
-	mailBuilder.SetSubject("testing this thing out")
+	mailBuilder.SetSubject("test 3")
 	mailBuilder.UpdateMailBodyString("sending mail")
 
 	client.SendNewMail(mailAddress, string(mailBuilder.Build()))
+
+	mailBuilder.SetSubject("test 4")
+	client.SendNewMail(mailAddress, string(mailBuilder.Build())) // isnt sending, huh ?
+	err := client.CloseSMTPConnection()
+	fmt.Println(err)
 }
 ```
