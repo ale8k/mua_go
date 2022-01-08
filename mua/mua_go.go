@@ -256,18 +256,38 @@ func (mc *MailClient) SendNewMail(recipientAddress string, body string) (bool, e
 	if !ok {
 		return false, errors.New(fmt.Sprintf(MAIL_FROM_ERROR, code, statusLine))
 	}
-
 	// Set receive address
-	writeCRLFFlush(mc.smtpReadWriter, fmt.Sprintf("RCPT TO: %s", recipientAddress))
-	readLine(mc.smtpReadWriter) // TODO: look for 250
+	if err = writeCRLFFlush(mc.smtpReadWriter, fmt.Sprintf("RCPT TO: %s", recipientAddress)); err != nil {
+		return false, fmt.Errorf(WRITE_FAILURE, err)
+	}
+	line, err = readLine(mc.smtpReadWriter)
+	ok, code, statusLine = handleSmtpResponse(line, 250)
+	if !ok {
+		return false, errors.New(fmt.Sprintf(MAIL_FROM_ERROR, code, statusLine))
+	}
 	// Prep data for tranmission
-	writeCRLFFlush(mc.smtpReadWriter, "DATA")
-	readLine(mc.smtpReadWriter) // TODO: look for 354 (S: 354 Start mail input; end with <CRLF>.<CRLF>)
-	writeCRLFFlush(mc.smtpReadWriter, body)
-	readLine(mc.smtpReadWriter)
-
+	if err = writeCRLFFlush(mc.smtpReadWriter, "DATA"); err != nil {
+		return false, fmt.Errorf(WRITE_FAILURE, err)
+	}
+	line, err = readLine(mc.smtpReadWriter) // 354 (S: 354 Start mail input; end with <CRLF>.<CRLF>)
+	ok, code, statusLine = handleSmtpResponse(line, 354)
+	if !ok {
+		return false, errors.New(fmt.Sprintf(MAIL_FROM_ERROR, code, statusLine))
+	}
+	// Send data
+	if err = writeCRLFFlush(mc.smtpReadWriter, body); err != nil {
+		return false, fmt.Errorf(WRITE_FAILURE, err)
+	}
+	readLine(mc.smtpReadWriter) // TODO handle resp code, check spec
 	// Reset mail
-	writeCRLFFlush(mc.smtpReadWriter, "RSET")
-	readLine(mc.smtpReadWriter)
+	if err = writeCRLFFlush(mc.smtpReadWriter, "RSET"); err != nil {
+		return false, fmt.Errorf(WRITE_FAILURE, err)
+	}
+	readLine(mc.smtpReadWriter) // TODO handle resp code, check spec
 	return true, err
+}
+
+// TODO implementation of image addition in blob chunks
+func (mc *MailClient) SendNewMailWithImage(recipientAddress string, body string, imgData [][]byte) (bool, error) {
+	return false, nil
 }
